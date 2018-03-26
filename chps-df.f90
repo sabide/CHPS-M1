@@ -7,28 +7,57 @@ program mpi_df
 
   integer :: i,is,ie
   
-  integer :: N
-  real(kind=8) ,dimension(:),allocatable :: U 
+  integer :: N,NN
+  
   character(len=1024) :: filename
   character(len=3) :: num
+  integer,parameter :: nprocs=2
+
+  
+  real(kind=8) ,dimension(:),allocatable ::  X
+  real(kind=8) ,dimension(:),allocatable ::  U 
+  real(kind=8) ,dimension(:),allocatable :: DU
+  real(kind=8) ,dimension(:),allocatable ::  E
+  real(kind=8) :: H
   
   call mpi_init(ierr)
-  N=4
+  N=200
   call create_comm()
   call get_index(is,ie)
-  allocate(U(IS-1:IE+1))
-  call mpi_comm_rank(comm_1d,rank,ierr)
-  U(IS:IE)=rank
-  call halo_update(U)
 
+  !> allocation
+  ALLOCATE( X(IS-1:IE+1))
+  ALLOCATE( U(IS-1:IE+1))
+  ALLOCATE(DU(IS-1:IE+1))
+  ALLOCATE( E(IS-1:IE+1))
+  NN = NPROCS*N
+  H  = 1./REAL(NN)
+  do i=is,ie
+     x(i)=(i-0.5)*h
+  end do
+  call halo_update(x)
 
+  do i=is,ie
+     u(i)=f(x(i))
+  end do
+  call halo_update(u)
 
-
+  do i=is,ie
+     du(i)=(u(i+1)-u(i-1))/(2*h)
+  end do
+  call halo_update(du)
+  
+  do i=is,ie
+     E(I)=abs(du(i)-df(x(i)))
+  end do
+  call halo_update(E)
+  
+  
   num(1:3)='000'
   write (num, '(I3.3)')rank
   open(unit=10+rank,file="out"//num//".dat")
   do i=is-1,ie+1
-     write(10+rank,*)U(I)
+     write(10+rank,'(4(e15.8,1x))')X(I),U(I),DU(I),E(I)
   end do
 
   close(10+rank)
@@ -39,8 +68,18 @@ program mpi_df
 
 
 contains
-  
-  
+  real(kind=8) function f(x)
+    implicit none
+    real(kind=8) :: x
+    real(kind=8) :: pi=acos(-1d0)
+    f=sin(2*pi*x)
+  end function f
+  real(kind=8) function df(x)
+    implicit none
+    real(kind=8) :: x
+    real(kind=8) :: pi=acos(-1d0)
+    df=2*pi*cos(2*pi*x)
+  end function df
   subroutine get_index(is,ie)
     implicit none
     integer :: is,ie
@@ -58,7 +97,7 @@ contains
     logical, dimension(ndims) ::periods
     logical :: reorganisation
     
-    dims(1) = 4
+    dims(1) = nprocs
     periods(1) = .true.
     reorganisation = .false.
     call MPI_CART_CREATE( MPI_COMM_WORLD ,ndims,dims,periods,reorganisation,comm_1D,ierr)
